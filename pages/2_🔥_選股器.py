@@ -7,7 +7,26 @@ from datetime import datetime
 
 st.set_page_config(page_title="AI 自動選股器", layout="wide")
 st.title("🔥 AI 多維度自動選股器")
+# --- 密碼保護機制 ---
+def check_password():
+    def password_entered():
+        if st.session_state["password"] == st.secrets["app_password"]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # 為了安全清空輸入框
+        else:
+            st.session_state["password_correct"] = False
 
+    if "password_correct" not in st.session_state:
+        st.text_input("🔒 請輸入系統密碼以繼續：", type="password", on_change=password_entered, key="password")
+        return False
+    elif not st.session_state["password_correct"]:
+        st.text_input("🔒 密碼錯誤，請重新輸入：", type="password", on_change=password_entered, key="password")
+        return False
+    return True
+
+if not check_password():
+    st.stop() # 密碼錯誤就停止顯示後面的所有內容
+# --------------------
 # 1. 策略選單
 strategy = st.selectbox(
     "選擇今日掃描策略",

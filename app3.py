@@ -8,7 +8,26 @@ import google.generativeai as genai
 
 st.set_page_config(page_title="台美股儀表板", layout="wide")
 st.title("我的專屬台美股儀表板 📈 (官方 API 籌碼版)")
+# --- 密碼保護機制 ---
+def check_password():
+    def password_entered():
+        if st.session_state["password"] == st.secrets["app_password"]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # 為了安全清空輸入框
+        else:
+            st.session_state["password_correct"] = False
 
+    if "password_correct" not in st.session_state:
+        st.text_input("🔒 請輸入系統密碼以繼續：", type="password", on_change=password_entered, key="password")
+        return False
+    elif not st.session_state["password_correct"]:
+        st.text_input("🔒 密碼錯誤，請重新輸入：", type="password", on_change=password_entered, key="password")
+        return False
+    return True
+
+if not check_password():
+    st.stop() # 密碼錯誤就停止顯示後面的所有內容
+# --------------------
 st.sidebar.header("看盤設定")
 ticker = st.sidebar.text_input("輸入股票代碼", "2330.TW")
 period = st.sidebar.selectbox("選擇時間範圍", ["1mo", "3mo", "6mo", "1y", "5y"], index=2)
