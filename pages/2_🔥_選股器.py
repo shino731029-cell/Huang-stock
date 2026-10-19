@@ -8,6 +8,72 @@ from datetime import datetime
 st.set_page_config(page_title="AI 自動選股器", layout="wide")
 st.title("🔥 AI 多維度自動選股器")
 
+# ---------------------------------------------------------
+# 🌟 新增：頂端大盤溫度計 (每分鐘更新一次)
+# ---------------------------------------------------------
+@st.cache_data(ttl=60)
+def get_market_index(ticker_symbol):
+    try:
+        tk = yf.Ticker(ticker_symbol)
+        # 抓取近 2 天的歷史資料來計算漲跌幅
+        df = tk.history(period="2d")
+        if len(df) >= 2:
+            current_price = df['Close'].iloc[-1]
+            prev_price = df['Close'].iloc[-2]
+            change = current_price - prev_price
+            change_percent = (change / prev_price) * 100
+            return current_price, change, change_percent
+        elif len(df) == 1:
+            # 只有一天資料的防呆處理
+            current_price = df['Close'].iloc[-1]
+            return current_price, 0.0, 0.0
+        else:
+            return None, None, None
+    except Exception:
+        return None, None, None
+st.write("### 📊 大盤即時溫度計")
+
+# 建立三個並排放置的欄位
+col1, col2, col3 = st.columns(3)
+
+# 1. 抓取台股加權指數
+twii_price, twii_chg, twii_pct = get_market_index("^TWII")
+if twii_price is not None:
+        col1.metric(
+            label="🇹🇼 台股加權指數 (大盤)", 
+            value=f"{twii_price:,.2f}", 
+            delta=f"{twii_chg:,.2f} ({twii_pct:.2f}%)",
+            delta_color="inverse"  # 🌟 加上這行，反轉紅綠顏色！
+        )
+else:
+        col1.metric("🇹🇼 台股加權指數", "資料讀取中...", "-")
+
+    # 2. 抓取櫃買指數 (中小型股指標)
+otc_price, otc_chg, otc_pct = get_market_index("^TWOII")
+if otc_price is not None:
+        col2.metric(
+            label="📈 櫃買指數 (OTC)", 
+            value=f"{otc_price:,.2f}", 
+            delta=f"{otc_chg:,.2f} ({otc_pct:.2f}%)",
+            delta_color="inverse"  # 🌟 加上這行
+        )
+else:
+        col2.metric("📈 櫃買指數 (OTC)", "資料讀取中...", "-")
+
+    # 3. 抓取費城半導體指數
+sox_price, sox_chg, sox_pct = get_market_index("^SOX")
+if sox_price is not None:
+        col3.metric(
+            label="🇺🇸 費城半導體指數", 
+            value=f"{sox_price:,.2f}", 
+            delta=f"{sox_chg:,.2f} ({sox_pct:.2f}%)",
+            delta_color="inverse"  # 🌟 加上這行
+        )
+else:
+        col3.metric("🇺🇸 費城半導體指數", "資料讀取中...", "-")
+
+st.write("---") # 畫一條分隔線區隔大盤與下方的選股器
+# ---------------------------------------------------------
 # 1. 策略選單
 strategy = st.selectbox(
     "選擇今日掃描策略",
