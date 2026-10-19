@@ -7,26 +7,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="AI 自動選股器", layout="wide")
 st.title("🔥 AI 多維度自動選股器")
-# --- 密碼保護機制 ---
-def check_password():
-    def password_entered():
-        if st.session_state["password"] == st.secrets["app_password"]:
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]  # 為了安全清空輸入框
-        else:
-            st.session_state["password_correct"] = False
 
-    if "password_correct" not in st.session_state:
-        st.text_input("🔒 請輸入系統密碼以繼續：", type="password", on_change=password_entered, key="password")
-        return False
-    elif not st.session_state["password_correct"]:
-        st.text_input("🔒 密碼錯誤，請重新輸入：", type="password", on_change=password_entered, key="password")
-        return False
-    return True
-
-if not check_password():
-    st.stop() # 密碼錯誤就停止顯示後面的所有內容
-# --------------------
 # 1. 策略選單
 strategy = st.selectbox(
     "選擇今日掃描策略",
@@ -45,8 +26,7 @@ strategy = st.selectbox(
 
 st.write(f"目前執行業務：**{strategy}**")
 
-# 2. 概念股連動選單
-# 2. 概念股連動選單 (🌟 終極擴充大樣本版)
+# 2. 概念股連動選單 (終極擴充版)
 CONCEPT_DICT = {
     "自訂輸入": "2330.TW, 2317.TW, 2454.TW",
     "🇹🇼 台灣前 20 大權值股 (穩健大盤)": "2330.TW, 2317.TW, 2454.TW, 2382.TW, 2308.TW, 2881.TW, 2882.TW, 2891.TW, 3231.TW, 2886.TW, 3711.TW, 1216.TW, 2002.TW, 2884.TW, 2885.TW, 3045.TW, 2892.TW, 2303.TW, 5871.TW, 2890.TW",
@@ -75,20 +55,16 @@ tickers_to_scan = list(dict.fromkeys([t.strip().upper() for t in raw_tickers if 
 
 st.caption(f"💡 目前共載入 **{len(tickers_to_scan)}** 檔標的準備掃描。")
 
-# 3. 掃描與計算核心邏輯
-# ---------------------------------------------------------
-# 🌟 核心：使用 Session State 記住掃描結果
-# ---------------------------------------------------------
-# 如果這是第一次進入網頁，先幫記憶體建立一個空的位子
+# --- Session State 初始化 ---
 if 'scan_results' not in st.session_state:
     st.session_state.scan_results = None
 
-# 當按下掃描按鈕時，執行掃描並存入記憶體
+# 3. 掃描與計算核心邏輯
 if st.button("🚀 開始全自動掃描"):
     if not tickers_to_scan:
         st.warning("請先在上方輸入至少一檔股票代碼！")
     else:
-        with st.spinner("正在逐一計算技術指標與基本面，請稍候..."):
+        with st.spinner("正在逐一計算技術指標、基本面與抓取新聞，請稍候..."):
             matched_stocks = []
             progress_bar = st.progress(0)
             total_stocks = len(tickers_to_scan)
@@ -99,7 +75,7 @@ if st.button("🚀 開始全自動掃描"):
                     info = tk.info
                     name = info.get('shortName', info.get('longName', ticker))
                     
-                    # --- 基本面價值策略 ---
+                    # --- 基本面價值策略特殊分支 ---
                     if strategy == "高殖利率低本益比 (價值防禦)":
                         pe = info.get("trailingPE", None)
                         dividend_yield = info.get("dividendYield", None)
@@ -110,14 +86,15 @@ if st.button("🚀 開始全自動掃描"):
                                 matched_stocks.append({
                                     "代號": ticker.replace(".TW", "").replace(".TWO", ""),
                                     "名稱": name,
-                                    "本益比 (P/E)": f"{pe:.1f} 倍",
-                                    "現金殖利率": f"{dy_percent:.2f}%",
-                                    "符合策略": strategy
+                                    "最新收盤價": "-",
+                                    "特徵摘要": f"PE:{pe:.1f}倍, 殖利率:{dy_percent:.2f}%",
+                                    "符合策略": strategy,
+                                    "新聞輿情": "基本面尋寶未開啟新聞掃描"
                                 })
                         progress_bar.progress((i + 1) / total_stocks)
                         continue
 
-                    # --- 技術面策略 ---
+                    # --- 技術面計算邏輯 ---
                     df = tk.history(period="6mo")
                     if not df.empty and len(df) >= 60:
                         close = df['Close'].iloc[-1]
@@ -129,6 +106,7 @@ if st.button("🚀 開始全自動掃描"):
                         df['SMA20'] = df['Close'].rolling(window=20).mean()
                         df['SMA60'] = df['Close'].rolling(window=60).mean()
                         df['Vol_SMA5'] = df['Volume'].rolling(window=5).mean()
+
                         df['STD20'] = df['Close'].rolling(window=20).std()
                         df['Upper_Band'] = df['SMA20'] + (df['STD20'] * 2)
 
@@ -214,13 +192,28 @@ if st.button("🚀 開始全自動掃描"):
                                 condition_met = True
                                 detail_note = f"RSI 自 {rsi_yest:.1f} 回升至 {rsi_today:.1f}"
 
+                        # --- 如果符合條件，加入新聞抓取邏輯 ---
                         if condition_met:
+                            news_titles = ""
+                            try:
+                                news_data = tk.news
+                                if news_data:
+                                    for idx, news in enumerate(news_data[:3]):
+                                        pub_date = datetime.fromtimestamp(news['providerPublishTime']).strftime('%m/%d')
+                                        news_titles += f"[{pub_date}] {news['title']}\n"
+                            except Exception:
+                                news_titles = "無最新相關新聞"
+                                
+                            if not news_titles.strip():
+                                news_titles = "無最新相關新聞"
+
                             matched_stocks.append({
                                 "代號": ticker.replace('.TW', '').replace('.TWO', ''),
                                 "名稱": name,
                                 "最新收盤價": f"{close:.2f}",
                                 "特徵摘要": detail_note,
-                                "符合策略": strategy
+                                "符合策略": strategy,
+                                "新聞輿情": news_titles
                             })
 
                 except Exception as e:
@@ -230,22 +223,19 @@ if st.button("🚀 開始全自動掃描"):
                 time.sleep(0.05)
 
             st.success("✅ 掃描任務完成！")
-            
-            # 🌟 關鍵：將掃描結果存入記憶體
             st.session_state.scan_results = matched_stocks
             st.balloons()
 
 
-# ---------------------------------------------------------
-# 🌟 顯示結果與 AI 區塊 (只要記憶體有東西，就會顯示出來，不怕重新整理)
-# ---------------------------------------------------------
+# 4. 顯示結果與 AI 分析區塊
 if st.session_state.scan_results is not None:
     matched_stocks = st.session_state.scan_results
     
     if matched_stocks:
         st.write(f"### 🏆 符合【{strategy}】標的清單")
         res_df = pd.DataFrame(matched_stocks)
-        st.dataframe(res_df, use_container_width=True)
+        # 在表格中隱藏「新聞輿情」這一直行，以免把表格撐得太寬，但仍保留在背後讓 AI 讀取
+        st.dataframe(res_df.drop(columns=['新聞輿情'], errors='ignore'), use_container_width=True)
         
         # CSV 下載按鈕
         today_str_file = datetime.now().strftime("%Y%m%d")
@@ -257,28 +247,36 @@ if st.session_state.scan_results is not None:
             mime="text/csv"
         )
         
-        # AI 分析區塊
+        # --- AI 輿情雷達呼叫區 ---
         st.write("---")
-        st.write("### 🤖 Gemini AI 後勢策略評估")
+        st.write("### 🤖 Gemini AI 新聞輿情與策略評估")
         api_key = st.text_input("🔑 輸入 Gemini API Key 進行解讀", type="password")
         
-        if st.button("✨ 產生策略後勢分析"):
+        if st.button("✨ 產生輿情雷達與分析"):
             if not api_key:
                 st.warning("⚠️ 請先在上方輸入您的 Gemini API Key！")
             else:
-                with st.spinner("AI 正在評估市場訊號..."):
+                with st.spinner("AI 正在閱讀新聞與評估訊號，這可能需要幾秒鐘..."):
                     try:
-                        stock_summary = "\n".join([f"- {s['代號']} {s['名稱']}: {s.get('特徵摘要', s.get('現金殖利率', ''))}" for s in matched_stocks])
+                        # 將股票基本資訊與「新聞輿情」組合起來餵給 AI
+                        stock_summary = ""
+                        for s in matched_stocks:
+                            stock_summary += f"■ 【{s['代號']} {s['名稱']}】 收盤價: {s['最新收盤價']} | 特徵: {s.get('特徵摘要', '')}\n"
+                            stock_summary += f"近期新聞：\n{s.get('新聞輿情', '無')}\n\n"
+
+                        today_str = datetime.now().strftime("%Y/%m/%d")
+                        
                         prompt = f"""
-                        【角色】：資深台股操盤手
+                        【角色】：資深台股操盤手與產業研究員
                         【當前策略】：{strategy}
-                        【今日選出標的】：
+                        【日期】：{today_str}
+                        【今日選出標的與新聞】：
                         {stock_summary}
 
-                        請針對此型態輸出 3 點結構化分析：
-                        1. **族群效應**：這些股票是否屬於同族群（如 AI 伺服器、散熱、半導體），是否存在主力同步建倉訊號？
-                        2. **交易指引**：採用「{strategy}」進場時，理想的停損點（如跌破哪條均線或低點）應如何設置？
-                        3. **重點標的簡評**：挑選 1~2 檔具潛力的標的進行 2 行點評。
+                        請針對上述清單輸出 3 點結構化分析：
+                        1. **族群效應**：這些股票是否屬於同族群（如 AI 伺服器、散熱、半導體），這暗示了什麼資金流向？
+                        2. **📰 一分鐘新聞速讀與突破判讀**：結合我提供的「近期新聞」，挑選 1~2 檔最具討論度的標的進行點評。請判斷其技術面的強勢是因為實質基本面利多（如營收創高、接獲大單），還是缺乏消息面支撐的純籌碼博弈？
+                        3. **交易指引**：採用「{strategy}」進場時，理想的停損點（如跌破哪條均線或低點）應如何設置？
                         """
                         genai.configure(api_key=api_key)
                         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
