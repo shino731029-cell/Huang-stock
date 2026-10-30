@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import time
 import google.generativeai as genai
-from datetime import datetime, timedelta
+from datetime import datetime
 import plotly.graph_objects as go
 import gc
 
@@ -27,7 +27,7 @@ def get_market_index(ticker_symbol):
     except Exception:
         return None, None, None
 
-st.title("🔥 AI 多維度自動選股器 (雲端穩定版)")
+st.title("🔥 AI 多維度自動選股器 (前瞻產業版)")
 st.write("### 📊 大盤即時溫度計")
 
 col1, col2, col3 = st.columns(3)
@@ -52,11 +52,24 @@ else:
 st.write("---")
 
 # ---------------------------------------------------------
-# 1. 策略選單與名單
+# 1. 策略選單與名單 (新增 MACD、跳空、PB)
 # ---------------------------------------------------------
 strategy = st.selectbox(
     "選擇今日掃描策略",
-    ["布林通道突破 (波動轉強)", "均線多頭排列 (強勢趨勢)", "爆量長紅 (動能表態)", "跌深反彈 (乖離過大)", "創 60 日新高 (破箱噴出)", "均線糾結後突破 (蓄力表態)", "KD 低檔黃金交叉 (超賣轉折)", "RSI 超賣回升 (擺盪尋底)", "高殖利率低本益比 (價值防禦)"]
+    [
+        "布林通道突破 (波動轉強)", 
+        "均線多頭排列 (強勢趨勢)", 
+        "爆量長紅 (動能表態)", 
+        "跌深反彈 (乖離過大)", 
+        "創 60 日新高 (破箱噴出)", 
+        "均線糾結後突破 (蓄力表態)", 
+        "KD 低檔黃金交叉 (超賣轉折)", 
+        "RSI 超賣回升 (擺盪尋底)",
+        "MACD 零軸上金叉 (波段起漲)",        # 🌟 NEW
+        "向上跳空缺口不補 (強勢表態)",        # 🌟 NEW
+        "高殖利率低本益比 (價值防禦)", 
+        "低股價淨值比 PB < 1.2 (低基期尋寶)"  # 🌟 NEW
+    ]
 )
 
 CONCEPT_DICT = {
@@ -66,10 +79,13 @@ CONCEPT_DICT = {
     "❄️ 散熱與液冷族群": "3017.TW, 3324.TW, 3036.TW, 2421.TW, 3483.TWO, 3338.TW",
     "⚡ 矽光子與網通 (CPO)": "3450.TW, 3081.TWO, 3163.TWO, 6442.TW, 4979.TW, 4908.TW",
     "🧠 AI 矽智財與 ASIC": "3443.TW, 3661.TW, 3529.TW, 6643.TWO, 3035.TW, 6531.TW, 6533.TW",
-    "💻 AI PC 與邊緣運算": "2353.TW, 2357.TW, 2324.TW, 2377.TW, 2454.TW, 4938.TW",
     "⚙️ AI 伺服器機殼與導軌": "8210.TW, 2059.TW, 3013.TW, 3693.TW, 5236.TWO",
-    "🧪 AI 測試設備與驗證介面": "2360.TW, 2449.TW, 6223.TW, 6515.TWO, 6683.TWO",
     "🤖 輝達機器人與視覺智能": "2359.TW, 2365.TW, 6188.TWO, 6215.TW, 2464.TW",
+    # 👇 🌟 新增的未來產業族群
+    "⬛ FOPLP 面板級封裝 (次世代封裝)": "3481.TW, 2409.TW, 3583.TW, 3131.TWO, 6640.TWO, 6239.TW",
+    "🛰️ 低軌衛星與太空通訊 (SpaceX)": "2314.TW, 3491.TW, 6271.TW, 3311.TW, 2383.TW, 6285.TW, 3466.TWO, 2313.TW",
+    "🚘 無人駕駛與車用電子 (ADAS)": "2308.TW, 6282.TW, 3552.TW, 2231.TW, 1319.TW, 3346.TW, 5425.TWO, 2497.TW",
+    "🧬 生技醫療與 CDMO (避險金流)": "6547.TW, 4743.TW, 1795.TW, 6472.TW, 6446.TWO, 4147.TWO, 1762.TW"
 }
 
 selected_concept = st.selectbox("📌 快速載入熱門概念股 (雲端為求穩定已精簡數量)：", list(CONCEPT_DICT.keys()))
@@ -82,7 +98,7 @@ if 'scan_results' not in st.session_state:
     st.session_state.scan_results = None
 
 # ---------------------------------------------------------
-# 2. 掃描核心邏輯 (快取版)
+# 2. 掃描核心邏輯 (加入新策略演算法)
 # ---------------------------------------------------------
 @st.cache_data(ttl=3600, show_spinner=False)
 def run_scan(tickers, selected_strategy):
@@ -93,16 +109,27 @@ def run_scan(tickers, selected_strategy):
             info = tk.info
             name = info.get('shortName', info.get('longName', ticker))
             
+            # --- 基本面策略 ---
             if selected_strategy == "高殖利率低本益比 (價值防禦)":
                 pe, dy = info.get("trailingPE"), info.get("dividendYield")
                 if pe and dy and pe < 20 and dy * 100 >= 4.0:
                     results.append({"代號": ticker.replace(".TW", "").replace(".TWO", ""), "名稱": name, "最新收盤價": "-", "特徵摘要": f"PE:{pe:.1f}倍, 殖利率:{dy*100:.2f}%", "符合策略": selected_strategy, "新聞輿情": "無", "原始代號": ticker})
                 continue
+                
+            if selected_strategy == "低股價淨值比 PB < 1.2 (低基期尋寶)":
+                pb = info.get("priceToBook")
+                if pb and 0 < pb < 1.2:
+                    results.append({"代號": ticker.replace(".TW", "").replace(".TWO", ""), "名稱": name, "最新收盤價": "-", "特徵摘要": f"股價淨值比 PB: {pb:.2f}倍", "符合策略": selected_strategy, "新聞輿情": "無", "原始代號": ticker})
+                continue
 
+            # --- 技術面策略 ---
             df = tk.history(period="3mo")
             if df.empty or len(df) < 60: continue
 
             close, open_px, vol = df['Close'].iloc[-1], df['Open'].iloc[-1], df['Volume'].iloc[-1]
+            high_yest = df['High'].iloc[-2]
+            low_today = df['Low'].iloc[-1]
+            
             df['SMA5'] = df['Close'].rolling(5).mean()
             df['SMA20'] = df['Close'].rolling(20).mean()
             df['SMA60'] = df['Close'].rolling(60).mean()
@@ -114,16 +141,34 @@ def run_scan(tickers, selected_strategy):
             rs = delta.where(delta > 0, 0.0).rolling(14).mean() / (-delta.where(delta < 0, 0.0).rolling(14).mean() + 1e-9)
             df['RSI14'] = 100 - (100 / (1 + rs))
 
+            # 計算 MACD
+            ema12 = df['Close'].ewm(span=12, adjust=False).mean()
+            ema26 = df['Close'].ewm(span=26, adjust=False).mean()
+            df['MACD'] = ema12 - ema26
+            df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+
             sma5_now, sma20_now, sma60_now = df['SMA5'].iloc[-1], df['SMA20'].iloc[-1], df['SMA60'].iloc[-1]
             upper_now, vol_sma5_prev = df['Upper_Band'].iloc[-1], df['Vol_SMA5'].iloc[-2]
             rsi_today, rsi_yest = df['RSI14'].iloc[-1], df['RSI14'].iloc[-2]
+            macd_today, macd_yest = df['MACD'].iloc[-1], df['MACD'].iloc[-2]
+            sig_today, sig_yest = df['MACD_Signal'].iloc[-1], df['MACD_Signal'].iloc[-2]
 
             condition_met, detail_note = False, ""
+            
+            # 原有策略
             if selected_strategy == "布林通道突破 (波動轉強)" and close > upper_now: condition_met, detail_note = True, f"突破上軌 ({upper_now:.2f})"
             elif selected_strategy == "均線多頭排列 (強勢趨勢)" and close > sma5_now > sma20_now > sma60_now: condition_met, detail_note = True, f"收盤 {close:.2f} 站於全均線之上"
             elif selected_strategy == "爆量長紅 (動能表態)" and vol > (vol_sma5_prev * 2) and close > (open_px * 1.03): condition_met, detail_note = True, f"量增 {(vol/vol_sma5_prev):.1f}倍"
             elif selected_strategy == "跌深反彈 (乖離過大)" and ((close - sma20_now) / sma20_now) < -0.08: condition_met, detail_note = True, "負乖離 > 8%"
             elif selected_strategy == "RSI 超賣回升 (擺盪尋底)" and rsi_yest < 30 and rsi_today >= 30: condition_met, detail_note = True, f"RSI 回升至 {rsi_today:.1f}"
+            
+            # 🌟 新增策略
+            elif selected_strategy == "MACD 零軸上金叉 (波段起漲)":
+                if macd_yest < sig_yest and macd_today > sig_today and macd_today > 0:
+                    condition_met, detail_note = True, f"MACD {macd_today:.2f} 零軸之上翻紅"
+            elif selected_strategy == "向上跳空缺口不補 (強勢表態)":
+                if low_today > (high_yest * 1.015) and close > open_px:
+                    condition_met, detail_note = True, f"跳空缺口 > 1.5% 且強勢收紅"
 
             if condition_met:
                 news_titles = ""
@@ -137,7 +182,7 @@ def run_scan(tickers, selected_strategy):
         time.sleep(0.3)
     return results
 
-if st.button("🚀 開始全自動掃描 (雲端快取版)"):
+if st.button("🚀 開始全自動掃描 (前瞻產業版)"):
     if not tickers_to_scan:
         st.warning("請先輸入股票代碼！")
     else:
@@ -190,8 +235,6 @@ if st.session_state.get('scan_results') is not None:
                         prompt = f"策略：{strategy}\n日期：{datetime.now().strftime('%Y/%m/%d')}\n標的與新聞：\n{stock_summary}\n請分析：1.族群效應 2.突破真偽(搭配新聞) 3.停損建議"
                         
                         genai.configure(api_key=api_key)
-                        
-                        # 🌟 最強硬指定法：依照官方指示，首選 3.8-flash
                         fallback_models = ['gemini-3.8-flash', 'gemini-1.5-flash', 'gemini-pro']
                         success = False
                         
@@ -202,9 +245,9 @@ if st.session_state.get('scan_results') is not None:
                                 st.info(f"_(✅ 成功配對最新模型: `{model_name}`)_")
                                 st.markdown(res.text)
                                 success = True
-                                break # 成功就跳出迴圈，不再嘗試下一個
+                                break 
                             except Exception:
-                                continue # 如果這個模型出錯 (例如 404)，就換下一個嘗試
+                                continue 
                                 
                         if not success:
                             st.error("❌ 所有備用模型皆呼叫失敗。請確認您的 API Key 權限，或稍後再試。")
