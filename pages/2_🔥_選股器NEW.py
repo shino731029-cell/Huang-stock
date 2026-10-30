@@ -3,14 +3,16 @@ import yfinance as yf
 import pandas as pd
 import time
 import google.generativeai as genai
-from datetime import datetime
+from datetime import datetime, timedelta
 import plotly.graph_objects as go
 import gc
 
 st.set_page_config(page_title="AI 自動選股器", layout="wide")
 
-# --- 大盤溫度計 ---
-@st.cache_data(ttl=300) # 快取 5 分鐘
+# ---------------------------------------------------------
+# 🌟 大盤即時溫度計
+# ---------------------------------------------------------
+@st.cache_data(ttl=300)
 def get_market_index(ticker_symbol):
     try:
         tk = yf.Ticker(ticker_symbol)
@@ -49,7 +51,9 @@ else:
 
 st.write("---")
 
-# --- 策略與名單 ---
+# ---------------------------------------------------------
+# 1. 策略選單與名單
+# ---------------------------------------------------------
 strategy = st.selectbox(
     "選擇今日掃描策略",
     ["布林通道突破 (波動轉強)", "均線多頭排列 (強勢趨勢)", "爆量長紅 (動能表態)", "跌深反彈 (乖離過大)", "創 60 日新高 (破箱噴出)", "均線糾結後突破 (蓄力表態)", "KD 低檔黃金交叉 (超賣轉折)", "RSI 超賣回升 (擺盪尋底)", "高殖利率低本益比 (價值防禦)"]
@@ -61,11 +65,9 @@ CONCEPT_DICT = {
     "🔥 AI 伺服器與代工": "2317.TW, 2382.TW, 3231.TW, 6669.TW, 2356.TW, 2376.TW, 3706.TW, 2353.TW",
     "❄️ 散熱與液冷族群": "3017.TW, 3324.TW, 3036.TW, 2421.TW, 3483.TWO, 3338.TW",
     "⚡ 矽光子與網通 (CPO)": "3450.TW, 3081.TWO, 3163.TWO, 6442.TW, 4979.TW, 4908.TW",
-    
-    # 👇 以下為全新擴充的 AI 供應鏈次族群
-    "🧠 AI 矽智財與 ASIC (高本益比區)": "3443.TW, 3661.TW, 3529.TW, 6643.TWO, 3035.TW, 6531.TW, 6533.TW",
-    "💻 AI PC 與邊緣運算 (消費端 AI)": "2353.TW, 2357.TW, 2324.TW, 2377.TW, 2454.TW, 4938.TW",
-    "⚙️ AI 伺服器機殼與導軌 (機構件)": "8210.TW, 2059.TW, 3013.TW, 3693.TW, 5236.TWO",
+    "🧠 AI 矽智財與 ASIC": "3443.TW, 3661.TW, 3529.TW, 6643.TWO, 3035.TW, 6531.TW, 6533.TW",
+    "💻 AI PC 與邊緣運算": "2353.TW, 2357.TW, 2324.TW, 2377.TW, 2454.TW, 4938.TW",
+    "⚙️ AI 伺服器機殼與導軌": "8210.TW, 2059.TW, 3013.TW, 3693.TW, 5236.TWO",
     "🧪 AI 測試設備與驗證介面": "2360.TW, 2449.TW, 6223.TW, 6515.TWO, 6683.TWO",
     "🤖 輝達機器人與視覺智能": "2359.TW, 2365.TW, 6188.TWO, 6215.TW, 2464.TW",
 }
@@ -73,11 +75,16 @@ CONCEPT_DICT = {
 selected_concept = st.selectbox("📌 快速載入熱門概念股 (雲端為求穩定已精簡數量)：", list(CONCEPT_DICT.keys()))
 user_input = st.text_area("輸入股票代碼：", value=CONCEPT_DICT[selected_concept], height=80)
 raw_tickers = user_input.replace(',', ' ').replace('\n', ' ').split()
-tickers_to_scan = list(dict.fromkeys([t.strip().upper() for t in raw_tickers if t.strip()]))[:10] # 極限壓在 10 檔
+tickers_to_scan = list(dict.fromkeys([t.strip().upper() for t in raw_tickers if t.strip()]))[:10]
 st.caption(f"💡 雲端穩定版每次最多掃描 10 檔。目前載入 **{len(tickers_to_scan)}** 檔標的。")
 
-# --- 核心快取選股函數 ---
-@st.cache_data(ttl=3600, show_spinner=False) # 快取 1 小時，避免重複運算
+if 'scan_results' not in st.session_state:
+    st.session_state.scan_results = None
+
+# ---------------------------------------------------------
+# 2. 掃描核心邏輯 (快取版)
+# ---------------------------------------------------------
+@st.cache_data(ttl=3600, show_spinner=False)
 def run_scan(tickers, selected_strategy):
     results = []
     for ticker in tickers:
@@ -92,7 +99,7 @@ def run_scan(tickers, selected_strategy):
                     results.append({"代號": ticker.replace(".TW", "").replace(".TWO", ""), "名稱": name, "最新收盤價": "-", "特徵摘要": f"PE:{pe:.1f}倍, 殖利率:{dy*100:.2f}%", "符合策略": selected_strategy, "新聞輿情": "無", "原始代號": ticker})
                 continue
 
-            df = tk.history(period="3mo") # 只抓 3 個月
+            df = tk.history(period="3mo")
             if df.empty or len(df) < 60: continue
 
             close, open_px, vol = df['Close'].iloc[-1], df['Open'].iloc[-1], df['Volume'].iloc[-1]
@@ -121,7 +128,7 @@ def run_scan(tickers, selected_strategy):
             if condition_met:
                 news_titles = ""
                 try:
-                    for news in tk.news[:2]: # 新聞只抓 2 則
+                    for news in tk.news[:2]:
                         news_titles += f"[{datetime.fromtimestamp(news['providerPublishTime']).strftime('%m/%d')}] {news['title']}\n"
                 except: news_titles = "無相關新聞"
                 
@@ -130,7 +137,6 @@ def run_scan(tickers, selected_strategy):
         time.sleep(0.3)
     return results
 
-# --- 執行按鈕 ---
 if st.button("🚀 開始全自動掃描 (雲端快取版)"):
     if not tickers_to_scan:
         st.warning("請先輸入股票代碼！")
@@ -141,7 +147,9 @@ if st.button("🚀 開始全自動掃描 (雲端快取版)"):
             st.balloons()
             gc.collect()
 
-# --- 顯示結果與 AI 分析 ---
+# ---------------------------------------------------------
+# 3. 顯示結果、畫圖與 AI 分析
+# ---------------------------------------------------------
 if st.session_state.get('scan_results') is not None:
     matched_stocks = st.session_state.scan_results
     if matched_stocks:
@@ -149,7 +157,9 @@ if st.session_state.get('scan_results') is not None:
         res_df = pd.DataFrame(matched_stocks)
         st.dataframe(res_df.drop(columns=['新聞輿情', '原始代號'], errors='ignore'), use_container_width=True)
         
-        # 繪圖區
+        today_str_file = datetime.now().strftime("%Y%m%d")
+        st.download_button("📥 下載完整清單 (CSV)", res_df.to_csv(index=False).encode('utf-8-sig'), f"強勢股清單_{strategy}_{today_str_file}.csv", "text/csv")
+        
         st.write("---")
         st.write("### 📈 個股技術線型 (互動圖表)")
         chart_options = {f"{s['代號']} {s['名稱']}": s['原始代號'] for s in matched_stocks}
@@ -158,7 +168,7 @@ if st.session_state.get('scan_results') is not None:
         if selected_label:
             target_ticker = chart_options[selected_label]
             tk_chart = yf.Ticker(target_ticker)
-            df_chart = tk_chart.history(period="6mo") # 畫圖才抓半年
+            df_chart = tk_chart.history(period="6mo")
             if not df_chart.empty:
                 df_chart['SMA20'] = df_chart['Close'].rolling(20).mean()
                 df_chart['STD20'] = df_chart['Close'].rolling(20).std()
@@ -169,23 +179,23 @@ if st.session_state.get('scan_results') is not None:
                 fig.update_layout(title=f"【{selected_label}】 近半年走勢圖", xaxis_rangeslider_visible=False, height=450, template="plotly_white")
                 st.plotly_chart(fig, use_container_width=True)
 
-        # AI 區
-      try:
+        st.write("---")
+        st.write("### 🤖 Gemini AI 新聞輿情與策略評估")
+        api_key = st.text_input("🔑 輸入 Gemini API Key 進行輿情解讀", type="password")
+        if st.button("✨ 產生輿情雷達與分析"):
+            if api_key:
+                with st.spinner("AI 正在閱讀新聞與評估訊號..."):
+                    try:
                         stock_summary = "".join([f"■ 【{s['代號']} {s['名稱']}】 收盤價: {s['最新收盤價']} | 特徵: {s.get('特徵摘要', '')}\n近期新聞：\n{s.get('新聞輿情', '無')}\n\n" for s in matched_stocks])
                         prompt = f"策略：{strategy}\n日期：{datetime.now().strftime('%Y/%m/%d')}\n標的與新聞：\n{stock_summary}\n請分析：1.族群效應 2.突破真偽(搭配新聞) 3.停損建議"
                         genai.configure(api_key=api_key)
                         
-                        # ---------------------------------------------------------
-                        # 🌟 新增：終極雙重保險，自動降級機制
-                        # ---------------------------------------------------------
                         try:
-                            # 優先嘗試 1.5 世代模型
                             model = genai.GenerativeModel('gemini-1.5-flash')
                             res = model.generate_content(prompt)
                             st.info("_(API 使用模型: `gemini-1.5-flash`)_")
                         except Exception:
                             try:
-                                # 萬一失敗，降級使用最傳統、保證不斷線的基礎版
                                 model = genai.GenerativeModel('gemini-pro')
                                 res = model.generate_content(prompt)
                                 st.info("_(API 使用模型: `gemini-pro`)_")
@@ -193,7 +203,8 @@ if st.session_state.get('scan_results') is not None:
                                 st.error(f"雙重模型皆呼叫失敗，請檢查 API Key 是否有效。錯誤細節: {e_inner}")
                                 res = None
                         
-                        if res:
-                            st.markdown(res.text)
-                    except Exception as err: 
-                        st.error(f"API 系統錯誤：{err}")
+                        if res: st.markdown(res.text)
+                    except Exception as err: st.error(f"API 系統錯誤：{err}")
+            else: st.warning("⚠️ 請輸入 API Key！")
+    else:
+        st.info("暫無符合條件標的。")
