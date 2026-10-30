@@ -105,4 +105,35 @@ if st.button("🔄 計算最新損益與檢查停損"):
                 total_profit = total_value - total_cost
                 total_profit_pct = (total_profit / total_cost) * 100 if total_cost > 0 else 0
                 
-                col1, col2, col3 = st
+                col1, col2, col3 = st.columns(3)
+                col1.metric("總投資成本 (TWD)", f"{total_cost:,.0f}")
+                col2.metric("目前總市值 (TWD)", f"{total_value:,.0f}")
+                col3.metric("總未實現損益", f"{total_profit:,.0f}", f"{total_profit_pct:.2f}%", delta_color="inverse")
+                
+                # 顯示明細表格 (套用紅綠與警報顏色)
+                def color_table(val):
+                    if isinstance(val, str) and val == "🚨 跌破停損":
+                        return 'color: white; background-color: #ef5350; font-weight: bold' # 紅底白字
+                    elif isinstance(val, str) and val == "✅ 安全":
+                        return 'color: #26a69a'
+                    
+                    if isinstance(val, (int, float)):
+                        if val > 0: return 'color: #ef5350' # 台股紅漲
+                        elif val < 0: return 'color: #26a69a' # 台股綠跌
+                    return ''
+                    
+                styled_df = res_df.style.applymap(color_table, subset=['未實現損益', '報酬率 (%)', '狀態警報'])
+                st.dataframe(styled_df, use_container_width=True)
+
+                # 畫出資產配置圓餅圖
+                fig = go.Figure(data=[go.Pie(
+                    labels=res_df['股票名稱'], 
+                    values=res_df['目前市值'].str.replace(',', '').astype(float),
+                    hole=.4,
+                    textinfo='label+percent'
+                )])
+                fig.update_layout(title="資金配置比例 (依市值)", height=450)
+                st.plotly_chart(fig, use_container_width=True)
+                
+    else:
+        st.info("請先在上方表格輸入持股資料。")
