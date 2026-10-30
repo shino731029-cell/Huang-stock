@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import plotly.graph_objects as go
-import plotly.express as px  # 🌟 新增：用於繪製強大的熱力圖
+import plotly.express as px
 import google.generativeai as genai
 from datetime import datetime
 
@@ -33,7 +33,7 @@ st.session_state.portfolio = edited_df
 
 st.write("---")
 
-# 🌟 使用按鈕觸發運算，並將結果存入 session_state，讓圖表不會因為重新整理消失
+# 🌟 取消 st.rerun()，讓程式碼順暢地自然往下執行，避開版本衝突
 if st.button("🔄 啟動視覺化資產結算", type="primary"):
     if not edited_df.empty:
         with st.spinner("正在抓取最新報價與繪製專業圖表..."):
@@ -75,7 +75,7 @@ if st.button("🔄 啟動視覺化資產結算", type="primary"):
                             breached_alerts.append(f"{name} ({ticker}) 現價 {current_price:.2f} 已跌破設定價 {stop_price:.2f}！")
                         
                         results.append({
-                            "股票名稱": name,
+                            "股票名稱": str(name), # 強制轉字串防呆
                             "代號": ticker,
                             "最新股價": current_price,
                             "買進均價": cost_price,
@@ -95,7 +95,6 @@ if st.button("🔄 啟動視覺化資產結算", type="primary"):
                 st.session_state.total_cost = total_cost
                 st.session_state.total_value = total_value
                 st.session_state.breached_alerts = breached_alerts
-                st.rerun() # 強制刷新畫面以顯示圖表
 
 # ==========================================
 # 📊 顯示結果與視覺化圖表區
@@ -133,24 +132,32 @@ if st.session_state.get('port_results'):
     tab1, tab2 = st.tabs(["🔥 資產熱力圖 (Treemap)", "🌊 損益貢獻瀑布圖 (Waterfall)"])
     
     with tab1:
-        st.caption("方塊大小代表「市值權重」，顏色代表「報酬率」(紅色獲利、綠色虧損)。一眼看穿資金重壓區與獲利火車頭！")
-        # 建立 Treemap (設定 RdYlGn_r 確保紅漲綠跌)
-        fig_tree = px.treemap(
-            res_df, 
-            path=[px.Constant("我的投資組合"), '股票名稱'], 
-            values='目前市值',
-            color='報酬率 (%)', 
-            color_continuous_scale='RdYlGn_r',
-            color_continuous_midpoint=0,
-            custom_data=['報酬率 (%)', '未實現損益']
-        )
-        fig_tree.update_traces(hovertemplate='<b>%{label}</b><br>市值: %{value:,.0f}<br>報酬率: %{customdata[0]:.2f}%<br>損益: %{customdata[1]:,.0f}')
-        fig_tree.update_layout(height=550, margin=dict(t=30, l=10, r=10, b=10))
-        st.plotly_chart(fig_tree, use_container_width=True)
+        st.caption("方塊大小代表「市值權重」，顏色代表「報酬率」(紅色獲利、綠色虧損)。")
+        
+        # 🌟 除蟲 1：過濾掉市值為 0 的標的，避免 Plotly 崩潰
+        df_tree = res_df[res_df['目前市值'] > 0].copy()
+        
+        if not df_tree.empty:
+            # 🌟 除蟲 2：用實體欄位取代 px.Constant，100% 相容所有 Plotly 版本
+            df_tree['全部位'] = '我的投資組合'
+            
+            fig_tree = px.treemap(
+                df_tree, 
+                path=['全部位', '股票名稱'], 
+                values='目前市值',
+                color='報酬率 (%)', 
+                color_continuous_scale='RdYlGn_r',
+                color_continuous_midpoint=0,
+                custom_data=['報酬率 (%)', '未實現損益']
+            )
+            fig_tree.update_traces(hovertemplate='<b>%{label}</b><br>市值: %{value:,.0f}<br>報酬率: %{customdata[0]:.2f}%<br>損益: %{customdata[1]:,.0f}')
+            fig_tree.update_layout(height=550, margin=dict(t=30, l=10, r=10, b=10))
+            st.plotly_chart(fig_tree, use_container_width=True)
+        else:
+            st.info("尚無大於零的部位可供繪製圖表。")
         
     with tab2:
-        st.caption("瀑布圖展示每檔股票對「總損益」的具體貢獻，精準揪出拖累績效的老鼠屎與撐起半邊天的金雞母。")
-        # 建立 Waterfall
+        st.caption("瀑布圖展示每檔股票對「總損益」的具體貢獻。")
         names = res_df['股票名稱'].tolist() + ["總淨損益"]
         profits = res_df['未實現損益'].tolist() + [total_profit]
         measures = ["relative"] * len(res_df) + ["total"]
@@ -179,7 +186,7 @@ if st.session_state.get('port_results'):
     
     if st.button("✨ 產生專屬資產再平衡建議"):
         if api_key:
-            with st.spinner("AI 首席財務官正在分析您的資產配置，這可能需要幾秒鐘..."):
+            with st.spinner("AI 首席財務官正在分析您的資產配置..."):
                 try:
                     portfolio_summary = "\n".join([f"- {r['股票名稱']}({r['代號']}): 市值 {r['目前市值']:,.0f} (佔比 {r['目前市值']/total_value*100:.1f}%), 報酬率 {r['報酬率 (%)']:.2f}%, 狀態: {r['狀態警報']}" for r in results])
                     
@@ -192,9 +199,9 @@ if st.session_state.get('port_results'):
                     總未實現損益: {total_profit:,.0f} ({total_profit_pct:.2f}%)
                     
                     請提供 3 段式專業建議：
-                    1. **過度集中風險警告**：這組持股是否過度集中在特定產業（例如全是電子股）或單一個股權重過大？
-                    2. **汰弱留強指示**：依據報酬率與停損狀態，哪幾檔是拖累績效的老鼠屎應該果斷砍掉？哪幾檔是應該抱緊的金雞母？
-                    3. **下一步再平衡行動 (Rebalance)**：若要將資金轉向目前低基期或未來具潛力的板塊（如生技、金融、CPO、重電等），您建議如何調整？
+                    1. **過度集中風險警告**：這組持股是否過度集中在特定產業或單一個股權重過大？
+                    2. **汰弱留強指示**：依據報酬率與停損狀態，哪幾檔應該果斷砍掉？哪幾檔應該抱緊？
+                    3. **下一步再平衡行動 (Rebalance)**：若要將資金轉向目前低基期或未來具潛力的板塊，您建議如何調整？
                     """
                     
                     genai.configure(api_key=api_key)
