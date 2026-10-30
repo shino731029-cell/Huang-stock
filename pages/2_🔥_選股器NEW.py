@@ -184,35 +184,32 @@ if st.session_state.get('scan_results') is not None:
         api_key = st.text_input("🔑 輸入 Gemini API Key 進行輿情解讀", type="password")
         if st.button("✨ 產生輿情雷達與分析"):
             if api_key:
-                with st.spinner("AI 正在自動配對模型並解讀新聞，這可能需要幾秒鐘..."):
+                with st.spinner("AI 正在使用 3.8-flash 最新模型評估訊號..."):
                     try:
                         stock_summary = "".join([f"■ 【{s['代號']} {s['名稱']}】 收盤價: {s['最新收盤價']} | 特徵: {s.get('特徵摘要', '')}\n近期新聞：\n{s.get('新聞輿情', '無')}\n\n" for s in matched_stocks])
                         prompt = f"策略：{strategy}\n日期：{datetime.now().strftime('%Y/%m/%d')}\n標的與新聞：\n{stock_summary}\n請分析：1.族群效應 2.突破真偽(搭配新聞) 3.停損建議"
                         
                         genai.configure(api_key=api_key)
                         
-                        # 🌟 絕對無敵自動偵測模型寫法
-                        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                        # 🌟 最強硬指定法：依照官方指示，首選 3.8-flash
+                        fallback_models = ['gemini-3.8-flash', 'gemini-1.5-flash', 'gemini-pro']
+                        success = False
                         
-                        if not available_models:
-                            st.error("❌ 您的 API Key 無法存取任何模型，請確認是否為 Google AI Studio 申請的有效金鑰。")
-                        else:
-                            # 預設選清單第一筆並拿掉前綴
-                            target_model = available_models[0].replace("models/", "")
-                            
-                            # 優先找最快的 flash 模型
-                            for m in available_models:
-                                if 'flash' in m.lower():
-                                    target_model = m.replace("models/", "")
-                                    break
-                                    
-                            model = genai.GenerativeModel(target_model)
-                            res = model.generate_content(prompt)
-                            
-                            st.info(f"_(✅ 成功配對模型: `{target_model}`)_")
-                            st.markdown(res.text)
+                        for model_name in fallback_models:
+                            try:
+                                model = genai.GenerativeModel(model_name)
+                                res = model.generate_content(prompt)
+                                st.info(f"_(✅ 成功配對最新模型: `{model_name}`)_")
+                                st.markdown(res.text)
+                                success = True
+                                break # 成功就跳出迴圈，不再嘗試下一個
+                            except Exception:
+                                continue # 如果這個模型出錯 (例如 404)，就換下一個嘗試
+                                
+                        if not success:
+                            st.error("❌ 所有備用模型皆呼叫失敗。請確認您的 API Key 權限，或稍後再試。")
                     except Exception as err:
-                        st.error(f"API 系統錯誤：{err}")
+                        st.error(f"API 系統內部錯誤：{err}")
             else:
                 st.warning("⚠️ 請輸入 API Key！")
     else:
