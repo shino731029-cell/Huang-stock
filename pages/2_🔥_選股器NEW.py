@@ -170,18 +170,30 @@ if st.session_state.get('scan_results') is not None:
                 st.plotly_chart(fig, use_container_width=True)
 
         # AI 區
-        st.write("---")
-        api_key = st.text_input("🔑 輸入 Gemini API Key 進行輿情解讀", type="password")
-        if st.button("✨ 產生輿情雷達與分析"):
-            if api_key:
-                with st.spinner("AI 正在閱讀新聞與評估訊號..."):
-                    try:
+      try:
                         stock_summary = "".join([f"■ 【{s['代號']} {s['名稱']}】 收盤價: {s['最新收盤價']} | 特徵: {s.get('特徵摘要', '')}\n近期新聞：\n{s.get('新聞輿情', '無')}\n\n" for s in matched_stocks])
                         prompt = f"策略：{strategy}\n日期：{datetime.now().strftime('%Y/%m/%d')}\n標的與新聞：\n{stock_summary}\n請分析：1.族群效應 2.突破真偽(搭配新聞) 3.停損建議"
                         genai.configure(api_key=api_key)
-                        model = genai.GenerativeModel('gemini-1.5-flash')
-                        st.markdown(model.generate_content(prompt).text)
-                    except Exception as err: st.error(f"API 錯誤：{err}")
-            else: st.warning("⚠️ 請輸入 API Key！")
-    else:
-        st.info("暫無符合條件標的。")
+                        
+                        # ---------------------------------------------------------
+                        # 🌟 新增：終極雙重保險，自動降級機制
+                        # ---------------------------------------------------------
+                        try:
+                            # 優先嘗試 1.5 世代模型
+                            model = genai.GenerativeModel('gemini-1.5-flash')
+                            res = model.generate_content(prompt)
+                            st.info("_(API 使用模型: `gemini-1.5-flash`)_")
+                        except Exception:
+                            try:
+                                # 萬一失敗，降級使用最傳統、保證不斷線的基礎版
+                                model = genai.GenerativeModel('gemini-pro')
+                                res = model.generate_content(prompt)
+                                st.info("_(API 使用模型: `gemini-pro`)_")
+                            except Exception as e_inner:
+                                st.error(f"雙重模型皆呼叫失敗，請檢查 API Key 是否有效。錯誤細節: {e_inner}")
+                                res = None
+                        
+                        if res:
+                            st.markdown(res.text)
+                    except Exception as err: 
+                        st.error(f"API 系統錯誤：{err}")
