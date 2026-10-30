@@ -850,11 +850,9 @@ if ticker:
                             full_prompt = f"【角色設定】：你是一位嚴謹的台股分析師，請嚴格依照格式輸出報告。\n\n現在現實日期是 {today_str}。請幫我分析股票 {clean_ticker}：\n\n{final_prompt}"
                             
                             # 呼叫模型
-                            genai.configure(api_key=api_key)
                             available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                            target_model_name = next((m for m in available_models if '3.8-flash' in m or '1.5-flash' in m), available_models[0])
-                            
-                            model = genai.GenerativeModel(target_model_name)
+                            target_model = next((m for m in available_models if 'flash' in m.lower()), available_models[0])
+                            model = genai.GenerativeModel(target_model)
                             response = model.generate_content(full_prompt)
                             
                             st.success("報告產出完成！")
