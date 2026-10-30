@@ -190,21 +190,26 @@ if st.session_state.get('scan_results') is not None:
                         prompt = f"策略：{strategy}\n日期：{datetime.now().strftime('%Y/%m/%d')}\n標的與新聞：\n{stock_summary}\n請分析：1.族群效應 2.突破真偽(搭配新聞) 3.停損建議"
                         genai.configure(api_key=api_key)
                         
-                        try:
-                            model = genai.GenerativeModel('gemini-1.5-flash')
-                            res = model.generate_content(prompt)
-                            st.info("_(API 使用模型: `gemini-1.5-flash`)_")
-                        except Exception:
-                            try:
-                                model = genai.GenerativeModel('gemini-pro')
-                                res = model.generate_content(prompt)
-                                st.info("_(API 使用模型: `gemini-pro`)_")
-                            except Exception as e_inner:
-                                st.error(f"雙重模型皆呼叫失敗，請檢查 API Key 是否有效。錯誤細節: {e_inner}")
-                                res = None
+                        # 🌟 絕對無敵版：直接向 Google 查詢你的 API Key 支援哪些模型
+                        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                         
-                        if res: st.markdown(res.text)
-                    except Exception as err: st.error(f"API 系統錯誤：{err}")
+                        if not available_models:
+                            st.error("❌ 您的 API Key 目前無法存取任何模型，請確認是否為 Google AI Studio 申請的有效金鑰。")
+                        else:
+                            # 預設選清單上的第一個，並去掉 "models/" 前綴以符合最新 SDK 格式
+                            target_model = available_models[0].replace("models/", "")
+                            
+                            # 優先尋找名單中速度最快的 flash 模型
+                            for m in available_models:
+                                if 'flash' in m.lower():
+                                    target_model = m.replace("models/", "")
+                                    break
+                                    
+                            model = genai.GenerativeModel(target_model)
+                            res = model.generate_content(prompt)
+                            
+                            st.info(f"_(✅ API 成功自動配對支援模型: `{target_model}`)_")
+                            st.markdown(res.text)
             else: st.warning("⚠️ 請輸入 API Key！")
     else:
         st.info("暫無符合條件標的。")
